@@ -2151,10 +2151,10 @@ impl Session<Playing> {
         // <https://github.com/aler9/rtsp-simple-server/issues/1066>. Initially
         // send `OPTIONS`, then follow recommendations to use (bodyless)
         // `SET_PARAMETER` or `GET_PARAMETER` if available.
-        let method = if *inner.flags & (SessionFlag::SetParameterSupported as u8) != 0 {
-            KeepaliveMethod::SetParameter
-        } else if *inner.flags & (SessionFlag::GetParameterSupported as u8) != 0 {
+        let method = if *inner.flags & (SessionFlag::GetParameterSupported as u8) != 0 {
             KeepaliveMethod::GetParameter
+        } else if *inner.flags & (SessionFlag::SetParameterSupported as u8) != 0 {
+            KeepaliveMethod::SetParameter
         } else {
             KeepaliveMethod::Options
         };
