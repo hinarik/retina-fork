@@ -166,7 +166,25 @@ fn process_annex_b<F: FnMut(Bytes) -> Result<(), String>>(
                 }
             }
         } else if trailing_zeros >= 2 && data[i] == 2 {
-            return Err("forbidden sequence 00 00 02 in NAL".into());
+            // Log a non-fatal warning instead of returning a fatal error.
+            log::warn!(
+                "Detected and ignored a non-compliant '00 00 02' sequence in an H.264 NAL unit. \
+                This is likely due to a bug in the camera's encoder. The stream will continue processing."
+            );
+
+            // Optional: For deeper debugging, log more details at debug level
+            log::debug!(
+                "Non-compliant sequence details: position={}, data_len={}, trailing_zeros={}, \
+                context={:02x?}",
+                i,
+                data.len(),
+                trailing_zeros,
+                &data[i.saturating_sub(5)..std::cmp::min(i + 5, data.len())]
+            );
+
+            // Reset state and continue parsing to handle the sequence as normal data.
+            trailing_zeros = 0;
+            i += 1;
         } else if trailing_zeros >= 2 && data[i] == 1 {
             if i > trailing_zeros {
                 let piece = data.split_to(i - trailing_zeros);
@@ -2086,6 +2104,40 @@ mod tests {
             nals,
             [Bytes::from_static(&[1]), Bytes::from_static(&[2, 3, 4])]
         );
+    }
+
+    /// Test handling of 00 00 02 sequence - now treated as warning, not error
+    #[test]
+    fn test_forbidden_sequence_00_00_02_handling() {
+        init_logging();
+        
+        // Test data containing 00 00 02 sequence
+        let data_with_00_00_02 = Bytes::from_static(&[0x65, 0x88, 0x84, 0x00, 0x00, 0x02, 0x03, 0x04]);
+        
+        // After fix: This should now succeed and process the NAL
+        let mut nals = vec![];
+        let result = process_annex_b(data_with_00_00_02.clone(), |nal| {
+            nals.push(nal);
+            Ok(())
+        });
+        
+        // Should succeed
+        assert!(result.is_ok());
+        
+        // Should have processed the NAL unit
+        assert_eq!(nals.len(), 1);
+        assert_eq_hex!(nals[0], &[0x65, 0x88, 0x84, 0x00, 0x00, 0x02, 0x03, 0x04]);
+        
+        // Test with 00 00 02 at the beginning
+        nals.clear();
+        let data_start = Bytes::from_static(&[0x00, 0x00, 0x02, 0x65, 0x88, 0x84]);
+        let result = process_annex_b(data_start, |nal| {
+            nals.push(nal);
+            Ok(())
+        });
+        assert!(result.is_ok());
+        assert_eq!(nals.len(), 1);
+        assert_eq_hex!(nals[0], &[0x00, 0x00, 0x02, 0x65, 0x88, 0x84]);
     }
 }
 
